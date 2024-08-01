@@ -47,6 +47,29 @@ from nptyping.typing_ import (
     name_per_dtype,
 )
 
+import typing
+class fixedUnionGenericAlias(typing._UnionGenericAlias, _root=True): # passing anything for _root allows us to subclass typing._UnionGenericAlias
+    def __repr__(self):
+        """simple repr that preserves nptyping info. makes beartype work better"""
+        return  " | ".join([repr(a) for a in self.__args__]) if self.__args__ else "()"
+@typing._SpecialForm
+def fixedUnion(self, parameters):
+    """clone of `typing.Union` that uses `fixedUnionGenericAlias` instead of `typing._UnionGenericAlias` to enable proper repr printing for nptyping.
+    """
+    if parameters == ():
+        raise TypeError("Cannot take a Union of no types.")
+    if not isinstance(parameters, tuple):
+        parameters = (parameters,)
+    msg = "Union[arg, ...]: each arg must be a type."
+    parameters = tuple(typing._type_check(p, msg) for p in parameters)
+    parameters = typing._remove_dups_flatten(parameters)
+    if len(parameters) == 1:
+        return parameters[0]
+    if len(parameters) == 2 and type(None) in parameters:
+        return fixedUnionGenericAlias(self, parameters, name="Optional")
+    else:
+        return fixedUnionGenericAlias(self, parameters)
+
 
 class NDArrayMeta(
     SubscriptableMeta,
@@ -169,6 +192,15 @@ class NDArrayMeta(
 
     def _shape_expression_to_str(cls, shape_expression: Any) -> str:
         return "Any" if shape_expression is Any else str(shape_expression)
+
+    def __or__(cls, other):
+        """use FixedUnion to create a Union in order to make __repr__ convey all information
+        """
+        return fixedUnion[cls, other]
+    def __ror__(cls, other):
+        """use FixedUnion to create a Union in order to make __repr__ convey all information
+        """
+        return fixedUnion[other, cls]
 
 
 class NDArray(NPTypingType, ABC, metaclass=NDArrayMeta):
